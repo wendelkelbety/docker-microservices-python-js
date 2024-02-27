@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
 
@@ -38,5 +38,19 @@ def itemadd():
     db.session.add(Items(title, content))
     db.session.commit()
 
-    item = Items.query.all()
-    return item
+    return "item"
+
+@app.route('/items-list', methods=['GET'])
+def item_list():
+    items = Items.query.all()
+
+    # Convertendo os itens para um formato serializável (por exemplo, JSON)
+    items_list = []
+    for item in items:
+        items_list.append({
+            'id': item.id,
+            'title': item.title,
+            'content': item.content
+        })
+
+    return jsonify(items_list)
