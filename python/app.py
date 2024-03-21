@@ -1,28 +1,14 @@
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
+import pyodbc
 import os
 
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DB_URI']# Configurar a URI do banco de dados
-
-db = SQLAlchemy(app)
-
-if __name__ == '__main__':
-    app.run()
-
-#Model
-class Items(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255))
-    content = db.Column(db.String(255))
-
-    def __init__(self, title, content):
-        self.title = title
-        self.content = content
-
-with app.app_context():
-    db.create_all()  # Criar tabelas apenas quando o script é executado diretamente
+def establish_connection(connection_string):
+    # Função para estabelecer a conexão com o banco de dados
+    connection = pyodbc.connect(connection_string)
+    cursor = connection.cursor()
+    return connection, cursor
 
 @app.route('/', methods=['GET'])
 def get():
@@ -32,19 +18,52 @@ def get():
 def itemadd():
     body = request.get_json()
 
+    # Obter os dados de conexão do corpo da solicitação JSON
+    db_host = body.get('db_host')
+    db_name = body.get('db_name')
+    db_user = body.get('db_user')
+    db_password = body.get('db_password')
+
+    # Construir a string de conexão com base nos dados fornecidos
+    connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_host};DATABASE={db_name};UID={db_user};PWD={db_password};"
+
+    # Estabelecer a conexão com o banco de dados
+    connection, cursor = establish_connection(connection_string)
+
+    # Extrair os dados do item do corpo da solicitação JSON
     title = body['title']
     content = body['content']
 
-    db.session.add(Items(title, content))
-    db.session.commit()
+    # Executar a inserção no banco de dados usando pyodbc
+    cursor.execute("INSERT INTO Items (title, content) VALUES (?, ?)", title, content)
+    connection.commit()
+
+    # Fechar a conexão após a conclusão da operação
+    connection.close()
 
     return "item"
 
 @app.route('/items-list', methods=['GET'])
 def item_list():
-    items = Items.query.all()
+    body = request.get_json()
 
-    # Convertendo os itens para um formato serializável (por exemplo, JSON)
+    # Obter os dados de conexão do corpo da solicitação JSON
+    db_host = body.get('db_host')
+    db_name = body.get('db_name')
+    db_user = body.get('db_user')
+    db_password = body.get('db_password')
+
+    # Construir a string de conexão com base nos dados fornecidos
+    connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_host};DATABASE={db_name};UID={db_user};PWD={db_password};"
+
+    # Estabelecer a conexão com o banco de dados
+    connection, cursor = establish_connection(connection_string)
+
+    # Executar a consulta no banco de dados usando pyodbc
+    cursor.execute("SELECT * FROM Items")
+    items = cursor.fetchall()
+
+    # Converter os itens para um formato serializável (por exemplo, JSON)
     items_list = []
     for item in items:
         items_list.append({
@@ -53,42 +72,82 @@ def item_list():
             'content': item.content
         })
 
+    # Fechar a conexão após a conclusão da operação
+    connection.close()
+
     return jsonify(items_list)
 
 @app.route('/items-update/<int:item_id>', methods=['POST'])
 def item_update(item_id):
+    body = request.get_json()
+
+    # Obter os dados de conexão do corpo da solicitação JSON
+    db_host = body.get('db_host')
+    db_name = body.get('db_name')
+    db_user = body.get('db_user')
+    db_password = body.get('db_password')
+
+    # Construir a string de conexão com base nos dados fornecidos
+    connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_host};DATABASE={db_name};UID={db_user};PWD={db_password};"
+
+    # Estabelecer a conexão com o banco de dados
+    connection, cursor = establish_connection(connection_string)
+
     try:
         # Obtém o item específico pelo ID
-        item = Items.query.get(item_id)
+        cursor.execute("SELECT * FROM Items WHERE id = ?", item_id)
+        item = cursor.fetchone()
 
         if not item:
             return jsonify({'error': 'Item não encontrado'}), 404
 
         # Atualiza os dados do item com base no JSON fornecido
-        body = request.get_json()
-        item.title = body.get('title', item.title)
-        item.content = body.get('content', item.content)
+        title = body.get('title')
+        content = body.get('content')
 
-        # Commit para salvar as alterações no banco de dados
-        db.session.commit()
+        cursor.execute("UPDATE Items SET title = ?, content = ? WHERE id = ?", title, content, item_id)
+        connection.commit()
 
         return jsonify({'message': 'Item atualizado com sucesso'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        # Fechar a conexão após a conclusão da operação
+        connection.close()
     
 @app.route('/items-delete/<int:item_id>', methods=['DELETE'])
 def item_delete(item_id):
+    # Obter os dados de conexão do corpo da solicitação JSON
+    body = request.get_json()
+    db_host = body.get('db_host')
+    db_name = body.get('db_name')
+    db_user = body.get('db_user')
+    db_password = body.get('db_password')
+
+    # Construir a string de conexão com base nos dados fornecidos
+    connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_host};DATABASE={db_name};UID={db_user};PWD={db_password};"
+
+    # Estabelecer a conexão com o banco de dados
+    connection, cursor = establish_connection(connection_string)
+
     try:
         # Busca o item pelo ID
-        item = Items.query.get(item_id)
+        cursor.execute("SELECT * FROM Items WHERE id = ?", item_id)
+        item = cursor.fetchone()
 
         if not item:
             return jsonify({'error': 'Item não encontrado'}), 404
 
         # Remove o item do banco de dados
-        db.session.delete(item)
-        db.session.commit()
+        cursor.execute("DELETE FROM Items WHERE id = ?", item_id)
+        connection.commit()
 
         return jsonify({'message': 'Item excluído com sucesso'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        # Fechar a conexão após a conclusão da operação
+        connection.close()
+
+if __name__ == '__main__':
+    app.run()
